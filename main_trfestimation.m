@@ -1,17 +1,13 @@
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% main_trfestimation
-% Builds synthetic EEG and checks the quality of TRF estimation: 
+% MAIN_TRFESTIMATION Builds synthetic EEG and checks the quality of TRF estimation:
 % Raw Vs CCA-filtered Vs SI-GEVD filtered
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
 % This script builds synthetic EEG based on base temporal response function (TRF) templates.
 % Half the data with Left attended TRF and half the data with right attended TRF.
-% Noise is added to it, and TRFs are estimated from the noisy EEG based on forward modelling. 
-% These are compared with when TRFs are estimated filtering of the noisy EEG data with an SI-GEVD 
+% Noise is added to it, and TRFs are estimated from the noisy EEG based on forward modelling.
+% These are compared with when TRFs are estimated filtering of the noisy EEG data with an SI-GEVD
 % filter or a CCA filter. The results are compared by using at therelative MSE with the base template.
 % Author: Neetha Das
 % Date: 6/6/2019
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 clc;
 clear all;
@@ -28,18 +24,18 @@ no_samples = ceil(tlen*fs);
 lambda = 0.2; % regularization parameter
 
 % Set range of stimulus lag (in ms)
-lag_start = 0; 
+lag_start = 0;
 lag_end = 400;
 
 %Range of SNR
-SNR_targets =  0:-5:-25; 
+SNR_targets =  0:-5:-25;
 
 
 % Load the base TRFs (Left and Right), and the EEG data+stimulus for a subject (15_subject in the AAD dataset) to be used as noise
 load('data_TRFestim.mat');
 eegnoise = flipud(subjectdata.eeg); % flip in time to ensure decorrelation with stimulus
-env = subjectdata.stimenv; 
-assert(subjectdata.fs == fs);  
+env = subjectdata.stimenv;
+assert(subjectdata.fs == fs);
 TRFL = meanTRFL;
 TRFR = meanTRFR;
 
@@ -64,7 +60,7 @@ base_TRF_R_all = repmat(base_TRF_R,1,63)*diag(amp_R_maxlag);
 idx_s = floor(lag_start/1e3*fs);
 idx_f = ceil(lag_end/1e3*fs);
 stim_lags = idx_s:idx_f;
-lagged_stim = LagGenerator(env,stim_lags)';
+lagged_stim = lag_data(env,stim_lags)';
 
 EEGatt_L = base_TRF_L'*lagged_stim;
 EEGatt_L_allch = repmat(EEGatt_L,63,1)';
@@ -74,8 +70,8 @@ EEGatt_R = base_TRF_R'*lagged_stim;
 EEGatt_R_allch = repmat(EEGatt_R,63,1)';
 EEGatt_R_allch = EEGatt_R_allch*diag(amp_R_maxlag);
 
-% Split EEG into trials 
-signal_length = size(eegnoise,1); 
+% Split EEG into trials
+signal_length = size(eegnoise,1);
 no_splits = floor(signal_length/no_samples);
 no_splits_all = no_splits*2;% X 2 because left attended as well as right attended TRFs are separately convolved with the same stimulus
 
@@ -104,8 +100,8 @@ for SNRnum = 1: size(SNR_targets,2)
     C_R = SNR_base/SNR;
     
     % Add noise to the synthesized EEG
-    respL = EEGatt_L_allch + C_L*eegnoise;    
-    respR = EEGatt_R_allch + C_R*eegnoise; 
+    respL = EEGatt_L_allch + C_L*eegnoise;
+    respR = EEGatt_R_allch + C_R*eegnoise;
     
     stim = env;
     
@@ -124,7 +120,7 @@ for SNRnum = 1: size(SNR_targets,2)
         count = count + 1;
         range = signal_length-j*no_samples+1:signal_length-(j-1)*no_samples;
         assert(length(range)==ceil(tlen*fs));
-                
+        
         % Ensure that attention was to the same direction during the full trial
         assert(att_dir(range(1)) == att_dir(range(end)))
         
@@ -135,18 +131,16 @@ for SNRnum = 1: size(SNR_targets,2)
         EegData_train = resp;
         EegData_train(range,:) = []; % leaving a trial out, to build the training set
         stim_train = stim;
-        stim_train(range,:) = []; 
+        stim_train(range,:) = [];
         att_dir_train = att_dir;
         att_dir_train(range,:) = [];
         
         % Normalize data
-        stim_train=normalize_data(stim_train); 
-%         stim_train=zscore(stim_train); 
+        stim_train=normalize_data(stim_train);
         EegData_train=normalize_data(EegData_train);
-%         EegData_train=zscore(EegData_train);
         
         % Find the denoising filters
-        [U,W,stim_lags] = find_sigevd_filter(EegData_train,stim_train,att_dir_train,fs,lag_start,lag_end,comps,lambda); %,no_of_loops);
+        [U,W,~] = find_sigevd_filter(EegData_train,stim_train,att_dir_train,fs,lag_start,lag_end,comps,lambda); %,no_of_loops);
         [Ucca,Wcca,stim_lags] = find_cca_filter(EegData_train,stim_train,fs,lag_start,lag_end,comps,lambda);
         
         % Test set
@@ -157,8 +151,8 @@ for SNRnum = 1: size(SNR_targets,2)
         EegData_gevd =  resp_test*W;
         EegData_cca =  resp_test*Wcca;
         
-        %Audio Data        
-        lagged_stim = LagGenerator(stim_test,stim_lags);
+        %Audio Data
+        lagged_stim = lag_data(stim_test,stim_lags);
         t = stim_lags(1)/fs:1/fs:stim_lags(end)/fs;
         
         %Estimate the TRFs from
@@ -177,10 +171,10 @@ for SNRnum = 1: size(SNR_targets,2)
         end
         
         % Scale the estimated TRFs to the same range as the base TRF (using least squares)
-        alpha_raw = trf_raw(:)\(base_TRF_all(:)); 
+        alpha_raw = trf_raw(:)\(base_TRF_all(:));
         trf_raw_scaled = trf_raw*alpha_raw;
         
-        alpha_gevd = trf_gevd(:)\(base_TRF_all(:)); 
+        alpha_gevd = trf_gevd(:)\(base_TRF_all(:));
         trf_gevd_scaled = trf_gevd*alpha_gevd;
         
         alpha_cca = trf_cca(:)\(base_TRF_all(:));
@@ -192,8 +186,7 @@ for SNRnum = 1: size(SNR_targets,2)
         mse_cca(SNRnum,count) = (norm(base_TRF_all(:) - trf_cca_scaled(:))/norm(base_TRF_all(:)))^2;
         
         if j == 1 % for one trial per SNR, show the TRFs
- 
-%             figure(1);
+            
             axes(ha(SNRnum));
             ha(SNRnum).XTickLabelMode = 'auto';
             t = t.*1000;
@@ -204,7 +197,7 @@ for SNRnum = 1: size(SNR_targets,2)
             line(t',trf_gevd_scaled(:,ch),'LineWidth',1.5,'Color',[0 0.75 0],'Linestyle','-.')
             xlim([0 410])
             if SNRnum > 3
-            xlabel('Lags (ms)','FontSize',12)
+                xlabel('Lags (ms)','FontSize',12)
             end
             if SNRnum == 3
                 legend({'Base','Raw','CCA','SI-GEVD'},'FontSize',12)
@@ -213,7 +206,7 @@ for SNRnum = 1: size(SNR_targets,2)
             
         end
     end
-
+    
 end
 
 set(ha(1:3),'XTickLabel',''); set(ha,'YTickLabel','')
